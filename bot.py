@@ -262,7 +262,7 @@ async def queue_worker():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name
     await update.message.reply_text(
-        f"👋 Hello {name}!\n\nThis is my new splitter bot @noveltap_ai_bot \n\n"
+        f"👋 Hello {name}!\n\n\n"
         f"Send me a **.docx**, **.txt**, or **.epub** file.\n"
         f"`/set 500` - Change custom chunk size."
     )
