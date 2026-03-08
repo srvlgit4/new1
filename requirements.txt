@@ -1,0 +1,2 @@
+python-docx
+python-telegram-bot
