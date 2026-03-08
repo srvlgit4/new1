@@ -5,6 +5,8 @@ import asyncio
 import zipfile
 import html
 import gc
+import threading
+from flask import Flask
 from docx import Document
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
@@ -19,7 +21,7 @@ DEFAULT_DOCX_CHUNK = 50
 DEFAULT_EPUB_CHUNK = 500
 
 # State Management
-document_queue = asyncio.Queue()
+document_queue = None # FIXED FOR RENDER: Initialized later
 user_chunk_sizes = {}
 pending_uploads = {}
 
@@ -349,22 +351,43 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await document_queue.put(job_data)
 
 # ==========================================
+# FAKE WEB SERVER (To keep Render Free Tier happy)
+# ==========================================
+app_web = Flask(__name__)
+
+@app_web.route('/')
+def health_check():
+    return "Bot is alive and running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app_web.run(host="0.0.0.0", port=port)
+
+# ==========================================
 # MAIN RUNNER
 # ==========================================
 async def start_background_tasks(app: Application):
+    global document_queue
+    document_queue = asyncio.Queue() # Safe initialization inside the loop
     asyncio.create_task(queue_worker())
 
-async def main():
+def main():
     print("🤖 Ultimate Fast Cracker Bot Initializing on Render...")
     app = Application.builder().token(TOKEN).post_init(start_background_tasks).build()
-    await app.bot.delete_webhook(drop_pending_updates=True)
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("set", set_chunk_size))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(CallbackQueryHandler(button_callback))
+    
     print("🚀 Master Bot is LIVE! (Speed, Memory & TXT Optimized)")
-    await app.run_polling(stop_signals=None)
+    
+    # FIXED FOR RENDER: run_polling is synchronous and creates its own loop!
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    # FIXED FOR RENDER: Clean standard asyncio execution
-    asyncio.run(main())
+    # Start the fake web server in the background
+    threading.Thread(target=run_web, daemon=True).start()
+    
+    # Start the Telegram bot
+    main()
