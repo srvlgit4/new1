@@ -110,12 +110,13 @@ def split_txt_logic(input_path, output_dir, chunk_size, output_format):
     return split_text_based_logic(input_path, output_dir, chunk_size, output_format, is_txt_file=True)
 
 # ==========================================
-# LOGIC 3: HIGH-SPEED EPUB CRACKER
+# LOGIC 3: HIGH-SPEED EPUB CRACKER (Ultra-Low Memory Version)
 # ==========================================
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
 
 def fast_html_to_text(raw_html):
+    # Slightly optimized regex to prevent CPU lockups
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', raw_html)
     text = re.sub(r'<(script|style|head)[^>]*>.*?</\1>', '', text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r'</?(p|div|h[1-6]|br|tr|li)[^>]*>', '\n', text, flags=re.IGNORECASE)
@@ -133,6 +134,8 @@ def split_epub_logic(input_path, output_dir, chunk_size, output_format):
         ext = ".txt" if output_format == "txt" else ".docx"
         part_name = f"Part_{count}-{clean_name}{ext}"
         part_path = os.path.join(output_dir, part_name)
+        
+        print(f"💾 Saving {part_name} to disk... (RAM clear inbound)")
 
         if output_format == "txt":
             with open(part_path, "w", encoding="utf-8") as f: f.write("\n\n".join(lines))
@@ -140,7 +143,7 @@ def split_epub_logic(input_path, output_dir, chunk_size, output_format):
             new_doc = Document()
             for line in lines: new_doc.add_paragraph(line)
             new_doc.save(part_path)
-            del new_doc 
+            del new_doc # DESTROY object to free RAM
 
         generated_files.append(part_path)
 
@@ -149,14 +152,23 @@ def split_epub_logic(input_path, output_dir, chunk_size, output_format):
         chapter_count = 0
         chunk_count = 1
 
+        print(f"🚀 STARTING EPUB EXTRACTION: {clean_name}")
+
         with zipfile.ZipFile(input_path, 'r') as epub_zip:
             html_files = [f for f in epub_zip.namelist() if f.lower().endswith(('.html', '.xhtml', '.htm'))]
             html_files.sort(key=natural_sort_key)
+            
+            print(f"📦 Found {len(html_files)} internal HTML files.")
 
-            for file_name in html_files:
+            for i, file_name in enumerate(html_files):
                 try:
+                    # ---> THIS WILL SHOW UP IN RENDER LOGS <---
+                    print(f"⚙️ Extracting ({i+1}/{len(html_files)}): {file_name}")
+                    
                     content = epub_zip.read(file_name).decode('utf-8', errors='ignore')
                     lines = fast_html_to_text(content)
+                    
+                    del content # Free RAM immediately
 
                     if lines:
                         text_buffer.extend(lines)
@@ -165,22 +177,23 @@ def split_epub_logic(input_path, output_dir, chunk_size, output_format):
 
                     if chapter_count >= chunk_size:
                         save_epub_chunk(text_buffer, chunk_count)
-                        text_buffer = []
+                        text_buffer = [] # Reset buffer to free RAM
                         chapter_count = 0
                         chunk_count += 1
-                        gc.collect() 
+                        gc.collect() # Force RAM dump
 
                 except Exception as e:
-                    print(f"Skipping bad EPUB section {file_name}: {e}")
+                    print(f"⚠️ Skipping bad EPUB section {file_name}: {e}")
                     continue
 
         if text_buffer:
             save_epub_chunk(text_buffer, chunk_count)
 
         gc.collect()
+        print("✅ EPUB EXTRACTION 100% COMPLETE.")
         return generated_files
     except Exception as e:
-        print(f"Total EPUB Zip failure: {e}")
+        print(f"❌ Total EPUB Zip failure: {e}")
         return []
 
 # ==========================================
