@@ -5,10 +5,14 @@ import asyncio
 import zipfile
 import html
 import gc
+
 from docx import Document
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from telegram.error import RetryAfter
+import os
+import threading
+from flask import Flask
 
 # ==========================================
 # CONFIGURATION
@@ -365,6 +369,22 @@ async def main():
     print("🚀 Master Bot is LIVE! (Speed, Memory & TXT Optimized)")
     await app.run_polling(stop_signals=None)
 
+
+# ==========================================
+# FAKE WEB SERVER (To keep Render Free Tier happy)
+# ==========================================
+app_web = Flask(__name__)
+
+@app_web.route('/')
+def health_check():
+    return "Bot is alive and running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app_web.run(host="0.0.0.0", port=port)
 if __name__ == "__main__":
-    # FIXED FOR RENDER: Clean standard asyncio execution
+    # Start the fake web server in the background
+    threading.Thread(target=run_web, daemon=True).start()
+    
+    # Start the Telegram bot
     asyncio.run(main())
