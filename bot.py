@@ -28,21 +28,43 @@ pending_uploads = {}
 # ==========================================
 # LOGIC 1 & 2: TXT & DOCX SPLITTER 
 # ==========================================
+import re
+import os
+import gc
+from docx import Document
+
+# ==========================================
+# IMPROVED LOGIC: SMART CHAPTER SPLITTER
+# ==========================================
 def split_text_based_logic(input_path, output_dir, chunk_size, output_format, is_txt_file=False):
     if not os.path.exists(output_dir): os.makedirs(output_dir)
     base_name = os.path.splitext(os.path.basename(input_path))[0]
     collector = []
     generated_files = []
 
-    current_start = 1
+    current_start = None
     target_chapter = None
     first_chapter_found = False
-    pattern_num = r"^(?:vol(?:ume)?\s*\d+\s*)?(?:chapter|ch|c|अध्याय|चैप्टर|#|नॉवेलटैप|उपन्यासटैप|सी|पेज|पृष्ठ|000)?\s*(\d+)(?:[:\s-]|$)"
+
+    # IMPROVED REGEX: 
+    # Supports: अध्याय, चैप्टर, Chapter, Ch, #, Vol, and pure numbers
+    # Handles titles like: "अध्याय 2, राक्षसी सम्राट का पुनर्जन्म" or "Chapter 1: The Beginning"
+    pattern_num = re.compile(
+        r"(?:vol(?:ume)?\s*\d+\s*)?"                 # Optional Volume
+        r"(?:chapter|ch|c|अध्याय|चैप्टर|सी|page|पृष्ठ|#)?\s*" # Optional Keyword
+        r"(\d+)"                                     # THE CHAPTER NUMBER (Group 1)
+        r"(?:[:\s,.-]|$)",                           # Separator or End of Line
+        re.IGNORECASE
+    )
 
     def save_chunk(lines, start, end, format_type):
         ext = ".txt" if format_type == "txt" else ".docx"
-        part_name = f"{start}_to_{end}-{base_name}{ext}" if end not in ["End", "Full"] else f"{end}-{base_name}{ext}"
-        if end == "End": part_name = f"{start}_to_End-{base_name}{ext}"
+        # Formatting filename logic
+        if end == "End": suffix = f"{start}_to_End"
+        elif end == "Full": suffix = "Full_Document"
+        else: suffix = f"{start}_to_{end}"
+        
+        part_name = f"{suffix}-{base_name}{ext}"
         part_path = os.path.join(output_dir, part_name)
 
         if format_type == "txt":
@@ -51,10 +73,10 @@ def split_text_based_logic(input_path, output_dir, chunk_size, output_format, is
             new_doc = Document()
             for line in lines: new_doc.add_paragraph(line)
             new_doc.save(part_path)
-            del new_doc 
-
+        
         generated_files.append(part_path)
 
+    # File loading
     if is_txt_file:
         with open(input_path, "r", encoding="utf-8", errors="ignore") as f:
             lines = [line.strip() for line in f if line.strip()]
@@ -63,41 +85,38 @@ def split_text_based_logic(input_path, output_dir, chunk_size, output_format, is
         lines = [para.text.strip() for para in doc.paragraphs if para.text.strip()]
         del doc 
 
-    def is_toc_entry(index):
-        lines_checked = 0
-        for j in range(index + 1, len(lines)):
-            if not lines[j]: continue
-            lines_checked += 1
-            if lines_checked > 8: break
-            if re.match(pattern_num, lines[j], re.IGNORECASE): return True
-        return False
-
     for i, text in enumerate(lines):
-        if text and not first_chapter_found:
-            match = re.match(pattern_num, text, re.IGNORECASE)
-            if match and not is_toc_entry(i):
-                detected_num = int(match.group(1))
+        # SEARCH for a chapter number in the line
+        match = pattern_num.search(text)
+        detected_num = int(match.group(1)) if match else None
+
+        # Logic 1: Find the very first chapter to start the sequence
+        if detected_num is not None and not first_chapter_found:
+            current_start = detected_num
+            target_chapter = detected_num + chunk_size
+            first_chapter_found = True
+            collector.append(text)
+            continue
+
+        # Logic 2: Check if we reached the boundary (next chunk start)
+        if first_chapter_found and detected_num is not None:
+            # Boundary reached (e.g., current is 1, target is 11, we found 11)
+            if detected_num >= target_chapter:
+                if collector:
+                    save_chunk(collector, current_start, detected_num - 1, output_format)
+                
+                collector = [text]
                 current_start = detected_num
                 target_chapter = detected_num + chunk_size
-                first_chapter_found = True
-
-        is_boundary = False
-        if text and first_chapter_found:
-            match = re.match(pattern_num, text, re.IGNORECASE)
-            if match and int(match.group(1)) == target_chapter:
-                is_boundary = True
-
-        if is_boundary:
-            if collector: save_chunk(collector, current_start, target_chapter - 1, output_format)
-            collector = [text]
-            current_start = target_chapter
-            target_chapter += chunk_size
+            else:
+                collector.append(text)
         else:
             collector.append(text)
 
+    # Save final chunk
     if collector:
         end_marker = "End" if first_chapter_found else "Full"
-        save_chunk(collector, current_start, end_marker, output_format)
+        save_chunk(collector, current_start if current_start else 1, end_marker, output_format)
 
     del lines
     gc.collect() 
