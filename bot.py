@@ -16,7 +16,7 @@ from telegram.error import RetryAfter
 # ==========================================
 # CONFIGURATION
 # ==========================================
-TOKEN = "7848041378:AAGewjtCvIDobmDLE6wFFUI1ETduxSkQtsE" # Your Bot Token
+TOKEN = "7848041378:AAH_r3VM726jFyPuzZ-G1WDucIrAL6Wo6o8" # Your Bot Token
 DEFAULT_DOCX_CHUNK = 50
 DEFAULT_EPUB_CHUNK = 500
 
